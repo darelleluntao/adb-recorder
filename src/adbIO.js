@@ -3,6 +3,7 @@ const { spawn, execFile } = require('child_process');
 function realSpawnGetEvent(serial, node) {
   const child = spawn('adb', ['-s', serial, 'shell', 'getevent', '-t', node]);
   const listeners = [];
+  const exitListeners = [];
   let buffer = '';
   child.stdout.on('data', (chunk) => {
     buffer += chunk.toString();
@@ -12,9 +13,18 @@ function realSpawnGetEvent(serial, node) {
       for (const cb of listeners) cb(line);
     }
   });
+  child.on('close', () => {
+    for (const cb of exitListeners) cb();
+  });
+  child.on('error', () => {
+    for (const cb of exitListeners) cb();
+  });
   return {
     onLine(cb) {
       listeners.push(cb);
+    },
+    onExit(cb) {
+      exitListeners.push(cb);
     },
     kill() {
       child.kill();

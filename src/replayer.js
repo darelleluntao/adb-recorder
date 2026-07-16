@@ -16,14 +16,19 @@ class Replayer extends EventEmitter {
   async replay(name, serial) {
     const rawLog = this.sessionStore.getEventsLog(name);
     const lines = rawLog.split('\n').filter((line) => line.trim());
+    const matchedLines = lines
+      .map((line) => ({ line: line.trim(), match: LINE_RE.exec(line.trim()) }))
+      .filter(({ match }) => match);
+
+    if (matchedLines.length === 0) {
+      throw new Error('events.log is empty or contains no valid recorded events');
+    }
+
     const parser = new GestureParser();
     let prevTs = null;
     let stepIndex = 0;
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      const match = LINE_RE.exec(trimmed);
-      if (!match) continue;
+    for (const { line: trimmed, match } of matchedLines) {
       const [, tsStr, devicePath, typeHex, codeHex, valueHex] = match;
       const ts = parseFloat(tsStr);
 

@@ -17,15 +17,22 @@ const TAP_LINES = [
 
 function fakeSpawn() {
   let onLineCb = null;
+  let onExitCb = null;
   return {
     onLine(cb) {
       onLineCb = cb;
+    },
+    onExit(cb) {
+      onExitCb = cb;
     },
     kill() {
       this.killed = true;
     },
     feed(line) {
       onLineCb(line);
+    },
+    exit() {
+      if (onExitCb) onExitCb();
     },
   };
 }
@@ -254,4 +261,37 @@ test('stop() kills the child process and emits stopped', async () => {
 
   assert.equal(spawn.killed, true);
   assert.equal(stopped, true);
+});
+
+test('unexpected child process exit (e.g. device unplugged) triggers a graceful stop', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => Buffer.from(''),
+  });
+  await recorder.start('demo', {
+    serial: 'x',
+    node: '/dev/input/event2',
+    device: { serial: 'x', model: 'x', resolution: 'x' },
+  });
+
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+
+  let stopped = false;
+  recorder.on('stopped', () => {
+    stopped = true;
+  });
+
+  spawn.exit();
+
+  assert.equal(stopped, true);
+
+  // partial session (the gesture recorded before the unplug) is preserved
+  const session = sessionStore.getSession('demo');
+  assert.equal(session.steps.length, 1);
 });

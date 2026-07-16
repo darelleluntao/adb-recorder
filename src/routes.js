@@ -1,6 +1,12 @@
 const express = require('express');
 const { spawn } = require('child_process');
 
+const VALID_SESSION_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
+function isValidSessionName(name) {
+  return typeof name === 'string' && VALID_SESSION_NAME_RE.test(name) && name !== '.' && name !== '..';
+}
+
 function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, createReplayer }) {
   const router = express.Router();
   const activeRecorders = new Map();
@@ -34,6 +40,11 @@ function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, crea
   router.post('/sessions', async (req, res) => {
     const { name, serial } = req.body;
     if (!name || !serial) return res.status(400).json({ error: 'name and serial are required' });
+    if (!isValidSessionName(name)) {
+      return res
+        .status(400)
+        .json({ error: 'Session name may only contain letters, numbers, dots, underscores, and hyphens' });
+    }
     if (sessionStore.listSessions().includes(name)) {
       return res.status(409).json({ error: `Session "${name}" already exists` });
     }
@@ -84,7 +95,16 @@ function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, crea
   });
 
   router.delete('/sessions/:name', (req, res) => {
-    sessionStore.deleteSession(req.params.name);
+    const { name } = req.params;
+    if (!isValidSessionName(name)) {
+      return res.status(400).json({ error: 'Invalid session name' });
+    }
+    const activeRecorder = activeRecorders.get(name);
+    if (activeRecorder) {
+      activeRecorder.stop();
+      activeRecorders.delete(name);
+    }
+    sessionStore.deleteSession(name);
     res.json({ deleted: true });
   });
 

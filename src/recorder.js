@@ -19,6 +19,9 @@ class Recorder extends EventEmitter {
     this.child.onLine((line) => {
       this._onLine(line).catch((err) => this._reportError(err));
     });
+    if (typeof this.child.onExit === 'function') {
+      this.child.onExit(() => this.stop());
+    }
   }
 
   _reportError(err) {

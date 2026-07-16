@@ -62,3 +62,13 @@ test('getSession returns null for unknown session', () => {
   const store = tmpStore();
   assert.equal(store.getSession('nope'), null);
 });
+
+test('createSession rejects a path-traversal name instead of escaping rootDir', () => {
+  const store = tmpStore();
+  assert.throws(() => store.createSession('../evil', { serial: 'x', model: 'x', resolution: 'x' }));
+  assert.throws(() => store.createSession('..', { serial: 'x', model: 'x', resolution: 'x' }));
+  assert.throws(() => store.createSession('foo/../../bar', { serial: 'x', model: 'x', resolution: 'x' }));
+
+  // nothing should have escaped rootDir
+  assert.ok(!fs.existsSync(path.join(store.rootDir, '..', 'evil')));
+});

@@ -1,12 +1,26 @@
 const fs = require('fs');
 const path = require('path');
 
+const VALID_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
+function assertValidSessionName(name) {
+  if (
+    typeof name !== 'string' ||
+    !VALID_NAME_RE.test(name) ||
+    name === '.' ||
+    name === '..'
+  ) {
+    throw new Error(`Invalid session name "${name}"`);
+  }
+}
+
 class SessionStore {
   constructor(rootDir) {
     this.rootDir = rootDir;
   }
 
   sessionPath(name) {
+    assertValidSessionName(name);
     return path.join(this.rootDir, name);
   }
 

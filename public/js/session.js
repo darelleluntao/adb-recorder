@@ -81,6 +81,8 @@ async function requestReplay(force) {
     if (confirm(confirmMsg)) {
       await requestReplay(true);
     }
+  } else if (!res.ok) {
+    alert(`Failed to start replay: ${body.error || `${res.status} ${res.statusText}`}`);
   }
 }
 

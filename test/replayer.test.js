@@ -56,3 +56,23 @@ test('replay sends every line in order with correct relative delays and reports 
   // gap between the two gestures is ~0.95s -> ~950ms sleep somewhere in the sequence
   assert.ok(sleeps.some((ms) => ms > 900 && ms < 1000));
 });
+
+test('replay rejects with a clear message when events.log is empty', async () => {
+  const sessionStore = { getEventsLog: () => '' };
+  const replayer = new Replayer({
+    sessionStore,
+    sendEvent: async () => {},
+  });
+
+  await assert.rejects(() => replayer.replay('demo', 'emulator-5554'), /empty or contains no valid recorded events/);
+});
+
+test('replay rejects with a clear message when events.log contains no parseable lines', async () => {
+  const sessionStore = { getEventsLog: () => 'garbage\nnot an event line\n' };
+  const replayer = new Replayer({
+    sessionStore,
+    sendEvent: async () => {},
+  });
+
+  await assert.rejects(() => replayer.replay('demo', 'emulator-5554'), /empty or contains no valid recorded events/);
+});

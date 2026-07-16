@@ -140,3 +140,56 @@ test('DELETE /api/sessions/:name deletes the session', async () => {
   assert.deepEqual(sessionStore.listSessions(), []);
   server.close();
 });
+
+test('DELETE /api/sessions/:name stops an active recorder before deleting', async () => {
+  const deviceManager = fakeDeviceManager(['emulator-5554'], {
+    'emulator-5554': { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+  let stopCalled = false;
+  class FakeRecorder extends EventEmitter {
+    async start(name, opts) {}
+    stop() {
+      stopCalled = true;
+    }
+  }
+  const sessionStore = fakeSessionStore();
+  const server = await startTestServer({
+    deviceManager,
+    sessionStore,
+    wsHub: { broadcast() {} },
+    createRecorder: () => new FakeRecorder(),
+    createReplayer: () => new EventEmitter(),
+  });
+  const { port } = server.address();
+
+  await fetch(`http://localhost:${port}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'demo', serial: 'emulator-5554' }),
+  });
+
+  const res = await fetch(`http://localhost:${port}/api/sessions/demo`, { method: 'DELETE' });
+
+  assert.equal(res.status, 200);
+  assert.equal(stopCalled, true);
+  assert.deepEqual(sessionStore.listSessions(), []);
+  server.close();
+});
+
+test('POST /api/sessions rejects a path-traversal session name', async () => {
+  const server = await startTestServer({
+    deviceManager: fakeDeviceManager([], {}),
+    sessionStore: fakeSessionStore(),
+    wsHub: { broadcast() {} },
+    createRecorder: () => new EventEmitter(),
+    createReplayer: () => new EventEmitter(),
+  });
+  const { port } = server.address();
+  const res = await fetch(`http://localhost:${port}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: '../evil', serial: 'emulator-5554' }),
+  });
+  assert.equal(res.status, 400);
+  server.close();
+});
