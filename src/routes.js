@@ -34,7 +34,7 @@ function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, crea
   router.get('/sessions/:name', (req, res) => {
     const session = sessionStore.getSession(req.params.name);
     if (!session) return res.status(404).json({ error: 'Session not found' });
-    res.json(session);
+    res.json({ ...session, recording: activeRecorders.has(req.params.name) });
   });
 
   router.post('/sessions', async (req, res) => {
@@ -50,11 +50,13 @@ function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, crea
     }
     try {
       const device = await deviceManager.getDeviceInfo(serial);
-      const node = await deviceManager.findTouchEventNode(serial);
+      const touchDevices = await deviceManager.findTouchDevices(serial);
+      const nodes = touchDevices.map((d) => d.node);
+      const { absMaxX, absMaxY } = touchDevices[0];
       const recorder = createRecorder();
       recorder.on('step', (step) => wsHub.broadcast(name, { type: 'step', step }));
       recorder.on('stopped', () => wsHub.broadcast(name, { type: 'recording-stopped' }));
-      await recorder.start(name, { serial, node, device: { ...device, node } });
+      await recorder.start(name, { serial, nodes, device: { ...device, nodes, absMaxX, absMaxY } });
       activeRecorders.set(name, recorder);
       res.status(201).json({ name, device });
     } catch (err) {
@@ -83,7 +85,16 @@ function createRouter({ deviceManager, sessionStore, wsHub, createRecorder, crea
         return res.status(409).json({ mismatch: true, recorded, current });
       }
       const replayer = createReplayer();
-      replayer.on('progress', (progress) => wsHub.broadcast(name, { type: 'replay-progress', ...progress }));
+      replayer.on('progress', (progress) =>
+        // note: progress.type is the gesture type; it must not clobber the
+        // websocket message type, so map fields explicitly.
+        wsHub.broadcast(name, {
+          type: 'replay-progress',
+          index: progress.index,
+          gesture: progress.type,
+          mode: progress.mode,
+        })
+      );
       replayer.on('done', () => wsHub.broadcast(name, { type: 'replay-done' }));
       replayer
         .replay(name, serial)

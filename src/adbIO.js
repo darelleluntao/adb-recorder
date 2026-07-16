@@ -1,7 +1,10 @@
 const { spawn, execFile } = require('child_process');
 
-function realSpawnGetEvent(serial, node) {
-  const child = spawn('adb', ['-s', serial, 'shell', 'getevent', '-t', node]);
+// No node argument: getevent watches every input device and prefixes each
+// line with the originating node path, which the recorder needs both to
+// filter to touch devices and to replay to the correct node later.
+function realSpawnGetEvent(serial) {
+  const child = spawn('adb', ['-s', serial, 'shell', 'getevent', '-t']);
   const listeners = [];
   const exitListeners = [];
   let buffer = '';
@@ -51,6 +54,31 @@ function realSendEvent(serial, devicePath, typeHex, codeHex, valueHex) {
   });
 }
 
+function execAdb(args) {
+  return new Promise((resolve, reject) => {
+    execFile('adb', args, (err, stdout, stderr) => (err ? reject(new Error(stderr || err.message)) : resolve(stdout)));
+  });
+}
+
+function realInputTap(serial, x, y) {
+  return execAdb(['-s', serial, 'shell', 'input', 'tap', String(x), String(y)]);
+}
+
+function realInputSwipe(serial, x0, y0, x1, y1, durationMs) {
+  return execAdb([
+    '-s',
+    serial,
+    'shell',
+    'input',
+    'swipe',
+    String(x0),
+    String(y0),
+    String(x1),
+    String(y1),
+    String(durationMs),
+  ]);
+}
+
 function realCaptureScreenshot(serial) {
   return new Promise((resolve, reject) => {
     execFile(
@@ -62,4 +90,4 @@ function realCaptureScreenshot(serial) {
   });
 }
 
-module.exports = { realSpawnGetEvent, realSendEvent, realCaptureScreenshot };
+module.exports = { realSpawnGetEvent, realSendEvent, realCaptureScreenshot, realInputTap, realInputSwipe };

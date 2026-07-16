@@ -56,7 +56,7 @@ test('recording a tap gesture saves a step and screenshot', async () => {
 
   await recorder.start('demo', {
     serial: 'emulator-5554',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
   });
 
@@ -98,7 +98,7 @@ test('recording two sequential gestures increments stepIndex and saves both', as
 
   await recorder.start('demo', {
     serial: 'emulator-5554',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
   });
 
@@ -150,7 +150,7 @@ test('a captureScreenshot rejection during a gesture does not crash the process 
 
   await recorder.start('demo', {
     serial: 'emulator-5554',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
   });
 
@@ -193,7 +193,7 @@ test('a captureScreenshot rejection with NO error listener attached does not cra
 
   await recorder.start('demo', {
     serial: 'emulator-5554',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
   });
 
@@ -226,6 +226,47 @@ test('a captureScreenshot rejection with NO error listener attached does not cra
   );
 });
 
+test('lines from non-touch devices are ignored (not logged, cannot corrupt gestures)', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => Buffer.from('fake-png'),
+  });
+
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    nodes: ['/dev/input/event2'],
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  // getevent with no node argument also prints header lines and events from
+  // other devices (keyboard, gpio); none of these may end up in events.log
+  // or close a pending gesture.
+  await spawn.feed('add device 1: /dev/input/event0');
+  await spawn.feed('  name:     "gpio-keys"');
+  for (const line of TAP_LINES.slice(0, 4)) {
+    await spawn.feed(line);
+  }
+  // keyboard SYN_REPORT mid-gesture must not close the touch gesture
+  await spawn.feed('[   100.020000] /dev/input/event0: 0001 0074 00000001');
+  await spawn.feed('[   100.020000] /dev/input/event0: 0000 0000 00000000');
+  for (const line of TAP_LINES.slice(4)) {
+    await spawn.feed(line);
+  }
+
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].type, 'tap');
+  const logged = sessionStore.getEventsLog('demo').split('\n').filter(Boolean);
+  assert.equal(logged.length, TAP_LINES.length);
+  assert.ok(logged.every((line) => line.includes('/dev/input/event2')));
+});
+
 test('stop() before start() does not throw', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
   const sessionStore = new SessionStore(dir);
@@ -249,7 +290,7 @@ test('stop() kills the child process and emits stopped', async () => {
   });
   await recorder.start('demo', {
     serial: 'x',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'x', model: 'x', resolution: 'x' },
   });
 
@@ -274,7 +315,7 @@ test('stop() is idempotent: calling it twice only emits stopped once', async () 
   });
   await recorder.start('demo', {
     serial: 'x',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'x', model: 'x', resolution: 'x' },
   });
 
@@ -299,7 +340,7 @@ test('unexpected child process exit (e.g. device unplugged) triggers a graceful 
   });
   await recorder.start('demo', {
     serial: 'x',
-    node: '/dev/input/event2',
+    nodes: ['/dev/input/event2'],
     device: { serial: 'x', model: 'x', resolution: 'x' },
   });
 

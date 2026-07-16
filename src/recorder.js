@@ -1,5 +1,5 @@
 const { EventEmitter } = require('events');
-const { GestureParser } = require('./eventParser');
+const { GestureParser, LINE_RE, TAP_THRESHOLD_PX } = require('./eventParser');
 
 class Recorder extends EventEmitter {
   constructor({ sessionStore, spawnGetEvent, captureScreenshot }) {
@@ -9,14 +9,25 @@ class Recorder extends EventEmitter {
     this.captureScreenshot = captureScreenshot;
   }
 
-  async start(name, { serial, node, device }) {
+  async start(name, { serial, nodes, device }) {
     this.sessionStore.createSession(name, device);
     this.name = name;
     this.serial = serial;
+    this.nodes = new Set(nodes);
     this.stepIndex = 0;
     this.stopped = false;
-    this.parser = new GestureParser();
-    this.child = this.spawnGetEvent(serial, node);
+    // Gesture coordinates are in the touchscreen's raw abs units (often
+    // 0..32767), not pixels; scale the tap-vs-swipe threshold accordingly.
+    const width = parseInt(String(device?.resolution).split('x')[0], 10);
+    const tapThreshold =
+      device?.absMaxX && width
+        ? Math.round((TAP_THRESHOLD_PX * (device.absMaxX + 1)) / width)
+        : TAP_THRESHOLD_PX;
+    this.parser = new GestureParser({ tapThreshold });
+    // getevent runs across ALL input devices (output lines are prefixed with
+    // the originating node); _onLine filters to the touch nodes. This avoids
+    // guessing which of several identical multi-touch nodes is live.
+    this.child = this.spawnGetEvent(serial);
     this.child.onLine((line) => {
       this._onLine(line).catch((err) => this._reportError(err));
     });
@@ -39,6 +50,8 @@ class Recorder extends EventEmitter {
   }
 
   async _onLine(line) {
+    const match = LINE_RE.exec(line.trim());
+    if (!match || !this.nodes.has(match[2])) return;
     this.sessionStore.appendEvents(this.name, [line]);
     const gesture = this.parser.feedLine(line);
     if (gesture) {

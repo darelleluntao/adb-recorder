@@ -7,10 +7,13 @@ const SYN_REPORT = 0x0000;
 const BTN_TOUCH = 0x014a;
 const ABS_MT_POSITION_X = 0x0035;
 const ABS_MT_POSITION_Y = 0x0036;
+const ABS_MT_TRACKING_ID = 0x0039;
+const TRACKING_ID_NONE = 0xffffffff;
 const TAP_THRESHOLD_PX = 15;
 
 class GestureParser {
-  constructor() {
+  constructor({ tapThreshold = TAP_THRESHOLD_PX } = {}) {
+    this.tapThreshold = tapThreshold;
     this._reset();
   }
 
@@ -21,6 +24,7 @@ class GestureParser {
     this.startX = null;
     this.startY = null;
     this.startTime = null;
+    this._active = false;
     this._pendingClose = false;
   }
 
@@ -38,15 +42,35 @@ class GestureParser {
     this.buffer.push(trimmed);
     if (this.startTime === null) this.startTime = ts;
 
-    if (type === EV_ABS && code === ABS_MT_POSITION_X) this.x = value;
-    if (type === EV_ABS && code === ABS_MT_POSITION_Y) this.y = value;
+    if (type === EV_ABS && code === ABS_MT_POSITION_X) {
+      this.x = value;
+      // TRACKING_ID (down) can arrive before the first position event in the
+      // same SYN batch; backfill the gesture origin from the first position.
+      if (this._active && this.startX === null) this.startX = value;
+    }
+    if (type === EV_ABS && code === ABS_MT_POSITION_Y) {
+      this.y = value;
+      if (this._active && this.startY === null) this.startY = value;
+    }
 
-    if (type === EV_KEY && code === BTN_TOUCH && value === 1) {
+    // Contact down: BTN_TOUCH 1 (physical touchscreens) or any
+    // ABS_MT_TRACKING_ID other than -1 (emulator virtio touch, which never
+    // emits BTN_TOUCH at all).
+    const isTrackingId = type === EV_ABS && code === ABS_MT_TRACKING_ID;
+    const isDown =
+      (type === EV_KEY && code === BTN_TOUCH && value === 1) ||
+      (isTrackingId && value !== TRACKING_ID_NONE && !this._active);
+    const isUp =
+      (type === EV_KEY && code === BTN_TOUCH && value === 0) ||
+      (isTrackingId && value === TRACKING_ID_NONE);
+
+    if (isDown) {
+      this._active = true;
       this.startX = this.x;
       this.startY = this.y;
     }
 
-    if (type === EV_KEY && code === BTN_TOUCH && value === 0) {
+    if (isUp) {
       this._pendingClose = true;
     }
 
@@ -64,7 +88,7 @@ class GestureParser {
     const distance = Math.hypot(x1 - x0, y1 - y0);
 
     const gesture = {
-      type: distance <= TAP_THRESHOLD_PX ? 'tap' : 'swipe',
+      type: distance <= this.tapThreshold ? 'tap' : 'swipe',
       x0,
       y0,
       x1,

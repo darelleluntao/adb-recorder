@@ -9,7 +9,13 @@ const { WsHub } = require('./src/wsHub');
 const { Recorder } = require('./src/recorder');
 const { Replayer } = require('./src/replayer');
 const { createRouter } = require('./src/routes');
-const { realSpawnGetEvent, realSendEvent, realCaptureScreenshot } = require('./src/adbIO');
+const {
+  realSpawnGetEvent,
+  realSendEvent,
+  realCaptureScreenshot,
+  realInputTap,
+  realInputSwipe,
+} = require('./src/adbIO');
 
 const PORT = process.env.PORT || 4545;
 const SESSIONS_DIR = path.join(__dirname, 'sessions');
@@ -35,7 +41,13 @@ app.use(
         spawnGetEvent: realSpawnGetEvent,
         captureScreenshot: realCaptureScreenshot,
       }),
-    createReplayer: () => new Replayer({ sessionStore, sendEvent: realSendEvent }),
+    createReplayer: () =>
+      new Replayer({
+        sessionStore,
+        sendEvent: realSendEvent,
+        inputTap: realInputTap,
+        inputSwipe: realInputSwipe,
+      }),
   })
 );
 

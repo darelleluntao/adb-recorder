@@ -19,7 +19,7 @@ function fakeDeviceManager(devices, infoBySerial) {
   return {
     listDevices: async () => devices,
     getDeviceInfo: async (serial) => infoBySerial[serial],
-    findTouchEventNode: async () => '/dev/input/event2',
+    findTouchDevices: async () => [{ node: '/dev/input/event2', absMaxX: 1439, absMaxY: 3119 }],
   };
 }
 
