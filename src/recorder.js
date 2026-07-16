@@ -17,8 +17,21 @@ class Recorder extends EventEmitter {
     this.parser = new GestureParser();
     this.child = this.spawnGetEvent(serial, node);
     this.child.onLine((line) => {
-      this._onLine(line).catch((err) => this.emit('error', err));
+      this._onLine(line).catch((err) => this._reportError(err));
     });
+  }
+
+  _reportError(err) {
+    // EventEmitter has a special case: emit('error', ...) with zero listeners
+    // throws synchronously. Since this is called from inside a .catch(), an
+    // unguarded emit here would become a new unhandled rejection and crash
+    // the process again. Only emit if someone is actually listening; otherwise
+    // fall back to logging so the failure is still visible.
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', err);
+    } else {
+      console.error('Recorder error:', err);
+    }
   }
 
   async _onLine(line) {
@@ -30,7 +43,10 @@ class Recorder extends EventEmitter {
   }
 
   async _handleGesture(gesture) {
-    const index = this.stepIndex++;
+    // Do not consume stepIndex until the screenshot/step are actually
+    // persisted, so a captureScreenshot rejection simply drops the failed
+    // gesture instead of leaving a gap in the numbering.
+    const index = this.stepIndex;
     const screenshotBuffer = await this.captureScreenshot(this.serial);
     this.sessionStore.saveScreenshot(this.name, index, screenshotBuffer);
     const step = {
@@ -45,6 +61,7 @@ class Recorder extends EventEmitter {
       screenshot: `screenshots/step-${index}.png`,
     };
     this.sessionStore.addStep(this.name, step);
+    this.stepIndex = index + 1;
     this.emit('step', step);
   }
 

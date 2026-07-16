@@ -160,6 +160,65 @@ test('a captureScreenshot rejection during a gesture does not crash the process 
   assert.equal(session.steps.length, 0);
 });
 
+test('a captureScreenshot rejection with NO error listener attached does not crash and does not consume a stepIndex', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  let shouldFail = true;
+  const screenshotCalls = [];
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async (serial) => {
+      screenshotCalls.push(serial);
+      if (shouldFail) {
+        throw new Error('device disconnected');
+      }
+      return Buffer.from('fake-png');
+    },
+  });
+
+  // Deliberately do NOT attach an 'error' listener. Per Node's EventEmitter,
+  // emit('error', ...) with zero listeners throws synchronously; the fix
+  // must guard against that so the process never crashes here.
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    node: '/dev/input/event2',
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  // First gesture: captureScreenshot rejects. If the process were going to
+  // crash from an unhandled rejection / thrown 'error' emit, it would happen
+  // during this feed loop.
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+
+  assert.equal(steps.length, 0);
+
+  // Second gesture: captureScreenshot now succeeds, proving processing
+  // continued normally after the failure above (no crash) and that the
+  // failed gesture did not consume a stepIndex — numbering stays contiguous
+  // starting at 0.
+  shouldFail = false;
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].index, 0);
+
+  const session = sessionStore.getSession('demo');
+  assert.equal(session.steps.length, 1);
+  assert.equal(
+    fs.readFileSync(path.join(sessionStore.sessionPath('demo'), 'screenshots', 'step-0.png'), 'utf8'),
+    'fake-png'
+  );
+});
+
 test('stop() before start() does not throw', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
   const sessionStore = new SessionStore(dir);
