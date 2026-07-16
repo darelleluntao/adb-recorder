@@ -263,6 +263,31 @@ test('stop() kills the child process and emits stopped', async () => {
   assert.equal(stopped, true);
 });
 
+test('stop() is idempotent: calling it twice only emits stopped once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => Buffer.from(''),
+  });
+  await recorder.start('demo', {
+    serial: 'x',
+    node: '/dev/input/event2',
+    device: { serial: 'x', model: 'x', resolution: 'x' },
+  });
+
+  let stoppedCount = 0;
+  recorder.on('stopped', () => {
+    stoppedCount++;
+  });
+  recorder.stop();
+  recorder.stop();
+
+  assert.equal(stoppedCount, 1);
+});
+
 test('unexpected child process exit (e.g. device unplugged) triggers a graceful stop', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
   const sessionStore = new SessionStore(dir);

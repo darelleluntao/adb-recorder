@@ -14,6 +14,7 @@ class Recorder extends EventEmitter {
     this.name = name;
     this.serial = serial;
     this.stepIndex = 0;
+    this.stopped = false;
     this.parser = new GestureParser();
     this.child = this.spawnGetEvent(serial, node);
     this.child.onLine((line) => {
@@ -69,6 +70,8 @@ class Recorder extends EventEmitter {
   }
 
   stop() {
+    if (this.stopped) return;
+    this.stopped = true;
     if (this.child) this.child.kill();
     this.emit('stopped');
   }
