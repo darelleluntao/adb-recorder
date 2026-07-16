@@ -8,6 +8,14 @@ per gesture, and replay a recorded session verbatim.
 - Node.js 20+
 - `adb` on your `PATH`, with exactly one device/emulator connected (or pass a
   specific serial in the UI's device dropdown if multiple are attached)
+- **Replay requires root.** `adb shell sendevent` writes directly to
+  `/dev/input/eventN`, and on a production ("user" build) device or emulator
+  SELinux denies that write to the `shell` domain even though the `shell`
+  user is in the `input` group (group permissions alone aren't sufficient).
+  Recording only needs read access via `getevent`, which works on any "user"
+  build. To replay, use a rooted device or an emulator AVD image with a
+  `userdebug`/`eng` build (`adb root` succeeds) — check with
+  `adb shell getprop ro.build.type`.
 
 ## Usage
 
