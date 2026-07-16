@@ -1,31 +1,52 @@
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function loadDevices() {
   const res = await fetch('/api/devices');
+  if (!res.ok) {
+    alert(`Failed to load devices: ${res.status} ${res.statusText}`);
+    return;
+  }
   const devices = await res.json();
   const select = document.getElementById('device-select');
   select.innerHTML = devices
-    .map((d) => `<option value="${d.serial}">${d.model} (${d.serial})</option>`)
+    .map((d) => `<option value="${escapeHtml(d.serial)}">${escapeHtml(d.model)} (${escapeHtml(d.serial)})</option>`)
     .join('');
 }
 
 async function loadSessions() {
   const res = await fetch('/api/sessions');
+  if (!res.ok) {
+    alert(`Failed to load sessions: ${res.status} ${res.statusText}`);
+    return;
+  }
   const sessions = await res.json();
   const tbody = document.querySelector('#sessions-table tbody');
   tbody.innerHTML = sessions
     .map(
       (s) => `
       <tr>
-        <td><a href="/session.html?name=${encodeURIComponent(s.name)}">${s.name}</a></td>
+        <td><a href="/session.html?name=${encodeURIComponent(s.name)}">${escapeHtml(s.name)}</a></td>
         <td>${s.stepCount}</td>
         <td>${s.duration.toFixed(1)}s</td>
-        <td>${s.device.model}</td>
-        <td><button data-name="${s.name}" class="delete-btn">Delete</button></td>
+        <td>${escapeHtml(s.device.model)}</td>
+        <td><button data-name="${escapeHtml(s.name)}" class="delete-btn">Delete</button></td>
       </tr>`
     )
     .join('');
   tbody.querySelectorAll('.delete-btn').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      await fetch(`/api/sessions/${encodeURIComponent(btn.dataset.name)}`, { method: 'DELETE' });
+      const res = await fetch(`/api/sessions/${encodeURIComponent(btn.dataset.name)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        alert(`Failed to delete session: ${res.status} ${res.statusText}`);
+        return;
+      }
       loadSessions();
     });
   });
