@@ -12,21 +12,85 @@ const sessionName = params.get('name');
 document.getElementById('session-title').textContent = sessionName;
 document.getElementById('export-link').href = `/api/sessions/${encodeURIComponent(sessionName)}/export`;
 
+// Recorded coordinates are raw touchscreen abs units (commonly 0..32767),
+// not pixels; scale against the recorded device's abs range to position
+// overlays and to show human-readable px values.
+let device = { absMaxX: 32767, absMaxY: 32767, resolution: '' };
+let screenW = null;
+let screenH = null;
+
+function pct(raw, absMax) {
+  return (raw / (absMax + 1)) * 100;
+}
+
+function toPx(raw, absMax, dim) {
+  return dim ? Math.round((raw / (absMax + 1)) * dim) : raw;
+}
+
+function showBanner(msg) {
+  const banner = document.getElementById('banner');
+  banner.textContent = msg;
+  banner.classList.add('show');
+}
+
+function setStatus(text, kind) {
+  const pill = document.getElementById('status');
+  pill.textContent = text;
+  pill.className = `pill${kind ? ` ${kind}` : ''}`;
+}
+
+function overlayFor(step) {
+  const x0 = pct(step.x0, device.absMaxX);
+  const y0 = pct(step.y0, device.absMaxY);
+  if (step.type === 'tap') {
+    return `<div class="marker-tap" style="left:${x0}%;top:${y0}%"></div>`;
+  }
+  const x1 = pct(step.x1, device.absMaxX);
+  const y1 = pct(step.y1, device.absMaxY);
+  return `
+    <svg class="marker-swipe" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <circle cx="${x0}" cy="${y0}" r="1.6"></circle>
+      <line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}"></line>
+    </svg>
+    <div class="marker-tap" style="left:${x1}%;top:${y1}%"></div>`;
+}
+
 function renderStep(step) {
   const timeline = document.getElementById('timeline');
+  const empty = timeline.querySelector('.empty');
+  if (empty) empty.remove();
+  const durMs = Math.round((step.endTime - step.startTime) * 1000);
+  const px = `${toPx(step.x0, device.absMaxX, screenW)},${toPx(step.y0, device.absMaxY, screenH)}`;
+  const px1 = `${toPx(step.x1, device.absMaxX, screenW)},${toPx(step.y1, device.absMaxY, screenH)}`;
+  const coords = step.type === 'tap' ? `(${px})` : `(${px}) &rarr; (${px1})`;
   const el = document.createElement('div');
   el.className = 'step';
   el.innerHTML = `
-    <img src="/sessions/${encodeURIComponent(sessionName)}/${encodeURIComponent(step.screenshot)}" />
-    <div>${escapeHtml(step.type)} (${escapeHtml(step.x0)},${escapeHtml(step.y0)}) &rarr; (${escapeHtml(step.x1)},${escapeHtml(step.y1)})</div>
+    <div class="shot">
+      <img src="/sessions/${encodeURIComponent(sessionName)}/${encodeURIComponent(step.screenshot)}" alt="step ${step.index} screenshot" loading="lazy" />
+      ${overlayFor(step)}
+    </div>
+    <div class="caption">
+      <span class="idx">${String(step.index + 1).padStart(2, '0')}</span>
+      <span class="kind ${escapeHtml(step.type)}">${escapeHtml(step.type)}</span>
+      <span class="coords">${coords} &middot; ${durMs}ms</span>
+    </div>
   `;
   timeline.appendChild(el);
+}
+
+function renderEmptyTimeline() {
+  document.getElementById('timeline').innerHTML = `
+    <div class="empty">
+      No steps yet — touch the device and each tap or swipe will appear here
+      with a screenshot the moment it happens.
+    </div>`;
 }
 
 async function loadDevices() {
   const res = await fetch('/api/devices');
   if (!res.ok) {
-    alert(`Failed to load devices: ${res.status} ${res.statusText}`);
+    showBanner(`Failed to load devices: ${res.status} ${res.statusText}`);
     return;
   }
   const devices = await res.json();
@@ -39,12 +103,30 @@ async function loadDevices() {
 async function loadSession() {
   const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}`);
   if (!res.ok) {
-    alert(`Failed to load session: ${res.status} ${res.statusText}`);
+    showBanner(`Failed to load session: ${res.status} ${res.statusText}`);
     return;
   }
   const session = await res.json();
+  if (session.device) {
+    device = { absMaxX: 32767, absMaxY: 32767, ...session.device };
+    const resMatch = /^(\d+)x(\d+)$/.exec(session.device.resolution || '');
+    if (resMatch) {
+      screenW = parseInt(resMatch[1], 10);
+      screenH = parseInt(resMatch[2], 10);
+    }
+  }
+  if (session.recording) {
+    setStatus('Recording', 'recording');
+  } else {
+    setStatus('Stopped', '');
+    document.getElementById('stop-btn').disabled = true;
+  }
   document.getElementById('timeline').innerHTML = '';
-  session.steps.forEach(renderStep);
+  if (session.steps.length === 0) {
+    renderEmptyTimeline();
+  } else {
+    session.steps.forEach(renderStep);
+  }
 }
 
 function connectWebSocket() {
@@ -55,15 +137,19 @@ function connectWebSocket() {
   ws.addEventListener('message', (event) => {
     const msg = JSON.parse(event.data);
     if (msg.type === 'step') {
+      setStatus('Recording', 'recording');
       renderStep(msg.step);
     } else if (msg.type === 'recording-stopped') {
-      document.getElementById('status').textContent = 'Stopped';
+      setStatus('Stopped', '');
+      document.getElementById('stop-btn').disabled = true;
     } else if (msg.type === 'replay-progress') {
-      document.getElementById('status').textContent = `Replaying step ${msg.index + 1}...`;
+      const mode = msg.mode === 'input' ? ' · input fallback' : '';
+      setStatus(`Replaying step ${msg.index + 1}${mode}`, 'replaying');
     } else if (msg.type === 'replay-done') {
-      document.getElementById('status').textContent = 'Replay complete';
+      setStatus('Replay complete', 'done');
     } else if (msg.type === 'replay-error') {
-      document.getElementById('status').textContent = `Replay error: ${msg.error}`;
+      setStatus('Replay failed', 'error');
+      showBanner(`Replay error: ${msg.error}`);
     }
   });
 }
@@ -82,12 +168,20 @@ async function requestReplay(force) {
       await requestReplay(true);
     }
   } else if (!res.ok) {
-    alert(`Failed to start replay: ${body.error || `${res.status} ${res.statusText}`}`);
+    setStatus('Replay failed', 'error');
+    showBanner(`Failed to start replay: ${body.error || `${res.status} ${res.statusText}`}`);
+  } else {
+    document.getElementById('banner').classList.remove('show');
+    setStatus('Replaying', 'replaying');
   }
 }
 
 document.getElementById('stop-btn').addEventListener('click', async () => {
-  await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/stop`, { method: 'POST' });
+  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionName)}/stop`, { method: 'POST' });
+  if (res.ok || res.status === 404) {
+    setStatus('Stopped', '');
+    document.getElementById('stop-btn').disabled = true;
+  }
 });
 
 document.getElementById('replay-btn').addEventListener('click', () => requestReplay(false));

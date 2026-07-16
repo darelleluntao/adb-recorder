@@ -1,21 +1,38 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>adb-recorder - session</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>adb-recorder &middot; session</title>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <a href="/index.html">&larr; Sessions</a>
-  <h1 id="session-title"></h1>
-  <p id="status">Live</p>
-  <div>
-    <label>Replay on <select id="replay-device-select"></select></label>
-    <button id="stop-btn">Stop Recording</button>
-    <button id="replay-btn">Replay</button>
-    <a id="export-link">Export</a>
+  <div class="shell">
+    <header class="masthead">
+      <a class="back" href="/index.html">&larr; Sessions</a>
+      <span class="tagline">ADB/RECORDER</span>
+    </header>
+
+    <div class="session-head">
+      <h1 id="session-title"></h1>
+      <span class="pill" id="status">&hellip;</span>
+    </div>
+
+    <div class="toolbar">
+      <div class="field">
+        <label for="replay-device-select">Replay on</label>
+        <select id="replay-device-select"></select>
+      </div>
+      <button id="replay-btn">&#9654;&#xFE0E; Replay</button>
+      <span class="spacer"></span>
+      <button id="stop-btn">&#9632;&#xFE0E; Stop Recording</button>
+      <a id="export-link" class="btn">Export .tar.gz</a>
+    </div>
+
+    <div class="banner" id="banner"></div>
+    <div class="timeline" id="timeline"></div>
   </div>
-  <div id="timeline"></div>
+
   <script src="/js/session.js"></script>
 </body>
 </html>

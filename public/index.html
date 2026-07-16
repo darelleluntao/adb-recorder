@@ -1,27 +1,40 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>adb-recorder</title>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
-  <h1>adb-recorder</h1>
+  <div class="shell">
+    <header class="masthead">
+      <h1 class="wordmark">ADB<span class="dim">/</span>RECORDER</h1>
+      <span class="tagline">record &middot; replay &middot; inspect Android touch input</span>
+    </header>
 
-  <section id="new-session">
-    <h2>New Session</h2>
-    <label>Name <input id="session-name" type="text" placeholder="login-to-booking" /></label>
-    <label>Device <select id="device-select"></select></label>
-    <button id="start-btn">Record</button>
-  </section>
+    <section class="deck" id="new-session">
+      <div class="field grow">
+        <label for="session-name">Session name</label>
+        <input id="session-name" type="text" placeholder="login-to-booking" autocomplete="off" />
+      </div>
+      <div class="field grow">
+        <label for="device-select">Device</label>
+        <select id="device-select"></select>
+      </div>
+      <button id="start-btn" class="btn-record">Record</button>
+      <p class="form-error" id="form-error"></p>
+    </section>
 
-  <section id="session-list">
-    <h2>Sessions</h2>
+    <p class="section-label">Sessions</p>
     <table id="sessions-table">
-      <thead><tr><th>Name</th><th>Steps</th><th>Duration</th><th>Device</th><th></th></tr></thead>
+      <thead>
+        <tr><th>Name</th><th class="num">Steps</th><th class="num">Duration</th><th>Device</th><th></th></tr>
+      </thead>
       <tbody></tbody>
     </table>
-  </section>
+    <div class="banner" id="banner"></div>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>
