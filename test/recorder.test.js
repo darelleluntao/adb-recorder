@@ -72,6 +72,106 @@ test('recording a tap gesture saves a step and screenshot', async () => {
   assert.equal(sessionStore.getEventsLog('demo').split('\n').filter(Boolean).length, TAP_LINES.length);
 });
 
+test('recording two sequential gestures increments stepIndex and saves both', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const screenshotCalls = [];
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async (serial) => {
+      screenshotCalls.push(serial);
+      return Buffer.from(`fake-png-${screenshotCalls.length}`);
+    },
+  });
+
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    node: '/dev/input/event2',
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+
+  assert.equal(steps.length, 2);
+  assert.equal(steps[0].index, 0);
+  assert.equal(steps[1].index, 1);
+  assert.equal(screenshotCalls.length, 2);
+
+  const session = sessionStore.getSession('demo');
+  assert.equal(session.steps.length, 2);
+  assert.equal(
+    fs.readFileSync(path.join(sessionStore.sessionPath('demo'), 'screenshots', 'step-0.png'), 'utf8'),
+    'fake-png-1'
+  );
+  assert.equal(
+    fs.readFileSync(path.join(sessionStore.sessionPath('demo'), 'screenshots', 'step-1.png'), 'utf8'),
+    'fake-png-2'
+  );
+});
+
+test('a captureScreenshot rejection during a gesture does not crash the process and is surfaced via an error event', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => {
+      throw new Error('device disconnected');
+    },
+  });
+
+  const errors = [];
+  const errorPromise = new Promise((resolve) => {
+    recorder.on('error', (err) => {
+      errors.push(err);
+      resolve();
+    });
+  });
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    node: '/dev/input/event2',
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  for (const line of TAP_LINES) {
+    await spawn.feed(line);
+  }
+  await errorPromise;
+
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /device disconnected/);
+  assert.equal(steps.length, 0);
+
+  const session = sessionStore.getSession('demo');
+  assert.equal(session.steps.length, 0);
+});
+
+test('stop() before start() does not throw', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => fakeSpawn(),
+    captureScreenshot: async () => Buffer.from(''),
+  });
+
+  assert.doesNotThrow(() => recorder.stop());
+});
+
 test('stop() kills the child process and emits stopped', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
   const sessionStore = new SessionStore(dir);

@@ -16,7 +16,9 @@ class Recorder extends EventEmitter {
     this.stepIndex = 0;
     this.parser = new GestureParser();
     this.child = this.spawnGetEvent(serial, node);
-    this.child.onLine((line) => this._onLine(line));
+    this.child.onLine((line) => {
+      this._onLine(line).catch((err) => this.emit('error', err));
+    });
   }
 
   async _onLine(line) {
