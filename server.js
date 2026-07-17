@@ -15,6 +15,8 @@ const {
   realCaptureScreenshot,
   realInputTap,
   realInputSwipe,
+  realInputText,
+  realInputKeyevent,
 } = require('./src/adbIO');
 
 const PORT = process.env.PORT || 4545;
@@ -47,6 +49,8 @@ app.use(
         sendEvent: realSendEvent,
         inputTap: realInputTap,
         inputSwipe: realInputSwipe,
+        inputText: realInputText,
+        inputKeyevent: realInputKeyevent,
       }),
   })
 );

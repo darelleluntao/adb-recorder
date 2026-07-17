@@ -60,20 +60,29 @@ function renderStep(step) {
   const empty = timeline.querySelector('.empty');
   if (empty) empty.remove();
   const durMs = Math.round((step.endTime - step.startTime) * 1000);
-  const px = `${toPx(step.x0, device.absMaxX, screenW)},${toPx(step.y0, device.absMaxY, screenH)}`;
-  const px1 = `${toPx(step.x1, device.absMaxX, screenW)},${toPx(step.y1, device.absMaxY, screenH)}`;
-  const coords = step.type === 'tap' ? `(${px})` : `(${px}) &rarr; (${px1})`;
+  let detail;
+  let overlay = '';
+  if (step.type === 'text') {
+    detail = `&ldquo;${escapeHtml(step.text)}&rdquo;`;
+  } else if (step.type === 'key') {
+    detail = escapeHtml(step.key === 'ENTER' ? '⏎' : step.key === 'DEL' ? '⌫' : step.key);
+  } else {
+    const px = `${toPx(step.x0, device.absMaxX, screenW)},${toPx(step.y0, device.absMaxY, screenH)}`;
+    const px1 = `${toPx(step.x1, device.absMaxX, screenW)},${toPx(step.y1, device.absMaxY, screenH)}`;
+    detail = step.type === 'tap' ? `(${px}) &middot; ${durMs}ms` : `(${px}) &rarr; (${px1}) &middot; ${durMs}ms`;
+    overlay = overlayFor(step);
+  }
   const el = document.createElement('div');
   el.className = 'step';
   el.innerHTML = `
     <div class="shot">
       <img src="/sessions/${encodeURIComponent(sessionName)}/${encodeURIComponent(step.screenshot)}" alt="step ${step.index} screenshot" loading="lazy" />
-      ${overlayFor(step)}
+      ${overlay}
     </div>
     <div class="caption">
       <span class="idx">${String(step.index + 1).padStart(2, '0')}</span>
       <span class="kind ${escapeHtml(step.type)}">${escapeHtml(step.type)}</span>
-      <span class="coords">${coords} &middot; ${durMs}ms</span>
+      <span class="coords">${detail}</span>
     </div>
   `;
   timeline.appendChild(el);

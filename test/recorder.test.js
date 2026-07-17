@@ -61,8 +61,9 @@ test('recording a tap gesture saves a step and screenshot', async () => {
   });
 
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   assert.equal(steps.length, 1);
   assert.equal(steps[0].type, 'tap');
@@ -103,11 +104,13 @@ test('recording two sequential gestures increments stepIndex and saves both', as
   });
 
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   assert.equal(steps.length, 2);
   assert.equal(steps[0].index, 0);
@@ -155,8 +158,9 @@ test('a captureScreenshot rejection during a gesture does not crash the process 
   });
 
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
   await errorPromise;
 
   assert.equal(errors.length, 1);
@@ -201,8 +205,9 @@ test('a captureScreenshot rejection with NO error listener attached does not cra
   // crash from an unhandled rejection / thrown 'error' emit, it would happen
   // during this feed loop.
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   assert.equal(steps.length, 0);
 
@@ -212,8 +217,9 @@ test('a captureScreenshot rejection with NO error listener attached does not cra
   // starting at 0.
   shouldFail = false;
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   assert.equal(steps.length, 1);
   assert.equal(steps[0].index, 0);
@@ -226,7 +232,49 @@ test('a captureScreenshot rejection with NO error listener attached does not cra
   );
 });
 
-test('lines from non-touch devices are ignored (not logged, cannot corrupt gestures)', async () => {
+test('gestures completing while a screenshot is still in flight get distinct sequential indices', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  let resolvers = [];
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    // screenshots resolve only when the test says so, simulating the ~300ms
+    // screencap latency during which more gestures can close
+    captureScreenshot: () =>
+      new Promise((resolve) => resolvers.push(() => resolve(Buffer.from(`png-${resolvers.length}`)))),
+  });
+
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    nodes: ['/dev/input/event2'],
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  // Three rapid gestures arrive before any screenshot resolves.
+  for (let i = 0; i < 3; i++) {
+    for (const line of TAP_LINES) {
+      spawn.feed(line);
+    }
+  }
+  await new Promise((r) => setImmediate(r));
+  // Now let all pending screenshots complete.
+  while (resolvers.length) {
+    resolvers.shift()();
+    await new Promise((r) => setImmediate(r));
+  }
+  await new Promise((r) => setImmediate(r));
+
+  assert.deepEqual(steps.map((s) => s.index), [0, 1, 2]);
+  const session = sessionStore.getSession('demo');
+  assert.deepEqual(session.steps.map((s) => s.index), [0, 1, 2]);
+});
+
+test('non-touch device events cannot corrupt gestures; header noise is never logged', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
   const sessionStore = new SessionStore(dir);
   const spawn = fakeSpawn();
@@ -246,25 +294,26 @@ test('lines from non-touch devices are ignored (not logged, cannot corrupt gestu
   });
 
   // getevent with no node argument also prints header lines and events from
-  // other devices (keyboard, gpio); none of these may end up in events.log
-  // or close a pending gesture.
+  // other devices (keyboard, gpio); header noise must never be logged, and a
+  // key event's SYN_REPORT mid-gesture must not close the touch gesture.
   await spawn.feed('add device 1: /dev/input/event0');
   await spawn.feed('  name:     "gpio-keys"');
   for (const line of TAP_LINES.slice(0, 4)) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
-  // keyboard SYN_REPORT mid-gesture must not close the touch gesture
-  await spawn.feed('[   100.020000] /dev/input/event0: 0001 0074 00000001');
-  await spawn.feed('[   100.020000] /dev/input/event0: 0000 0000 00000000');
+  // KEY_POWER mid-gesture: logged for raw replay, but no step, no gesture close
+  spawn.feed('[   100.020000] /dev/input/event0: 0001 0074 00000001');
+  spawn.feed('[   100.020000] /dev/input/event0: 0000 0000 00000000');
   for (const line of TAP_LINES.slice(4)) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   assert.equal(steps.length, 1);
   assert.equal(steps[0].type, 'tap');
   const logged = sessionStore.getEventsLog('demo').split('\n').filter(Boolean);
-  assert.equal(logged.length, TAP_LINES.length);
-  assert.ok(logged.every((line) => line.includes('/dev/input/event2')));
+  assert.equal(logged.length, TAP_LINES.length + 2);
+  assert.ok(logged.every((line) => line.startsWith('[')));
 });
 
 test('stop() before start() does not throw', () => {
@@ -345,8 +394,9 @@ test('unexpected child process exit (e.g. device unplugged) triggers a graceful 
   });
 
   for (const line of TAP_LINES) {
-    await spawn.feed(line);
+    spawn.feed(line);
   }
+  await recorder.idle();
 
   let stopped = false;
   recorder.on('stopped', () => {
@@ -360,4 +410,76 @@ test('unexpected child process exit (e.g. device unplugged) triggers a graceful 
   // partial session (the gesture recorded before the unplug) is preserved
   const session = sessionStore.getSession('demo');
   assert.equal(session.steps.length, 1);
+});
+
+test('hardware keystrokes are recorded as text steps, logged for raw replay, and ordered before the closing tap', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => Buffer.from('fake-png'),
+  });
+
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    nodes: ['/dev/input/event2'],
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  // type "hi" on the keyboard device (h=0x23, i=0x17), then tap Sign In
+  spawn.feed('[    99.000000] /dev/input/event12: 0001 0023 00000001');
+  spawn.feed('[    99.000000] /dev/input/event12: 0000 0000 00000000');
+  spawn.feed('[    99.000000] /dev/input/event12: 0001 0023 00000000');
+  spawn.feed('[    99.000000] /dev/input/event12: 0000 0000 00000000');
+  spawn.feed('[    99.100000] /dev/input/event12: 0001 0017 00000001');
+  spawn.feed('[    99.100000] /dev/input/event12: 0000 0000 00000000');
+  for (const line of TAP_LINES) {
+    spawn.feed(line);
+  }
+  await recorder.idle();
+
+  assert.deepEqual(steps.map((s) => s.type), ['text', 'tap']);
+  assert.equal(steps[0].text, 'hi');
+  assert.equal(steps[0].index, 0);
+  assert.equal(steps[1].index, 1);
+  assert.equal(steps[0].screenshot, 'screenshots/step-0.png');
+
+  // key events must land in events.log so raw sendevent replay reproduces them
+  const logged = sessionStore.getEventsLog('demo');
+  assert.ok(logged.includes('0001 0023 00000001'));
+  assert.ok(logged.includes('/dev/input/event12: 0000 0000 00000000'));
+});
+
+test('pending typed text is flushed as a final step on stop()', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adb-recorder-test-'));
+  const sessionStore = new SessionStore(dir);
+  const spawn = fakeSpawn();
+  const recorder = new Recorder({
+    sessionStore,
+    spawnGetEvent: () => spawn,
+    captureScreenshot: async () => Buffer.from('fake-png'),
+  });
+
+  const steps = [];
+  recorder.on('step', (step) => steps.push(step));
+
+  await recorder.start('demo', {
+    serial: 'emulator-5554',
+    nodes: ['/dev/input/event2'],
+    device: { serial: 'emulator-5554', model: 'Pixel', resolution: '1440x3120' },
+  });
+
+  spawn.feed('[    99.000000] /dev/input/event12: 0001 0023 00000001'); // h
+  recorder.stop();
+  await recorder.idle();
+
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].type, 'text');
+  assert.equal(steps[0].text, 'h');
+  assert.equal(sessionStore.getSession('demo').steps.length, 1);
 });

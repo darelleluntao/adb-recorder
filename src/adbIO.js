@@ -79,6 +79,18 @@ function realInputSwipe(serial, x0, y0, x1, y1, durationMs) {
   ]);
 }
 
+function realInputText(serial, text) {
+  // adb joins shell args with spaces and the device shell re-parses them, so
+  // the text must be single-quoted (with embedded quotes escaped) to survive
+  // spaces and metacharacters.
+  const quoted = `'${String(text).replace(/'/g, `'\\''`)}'`;
+  return execAdb(['-s', serial, 'shell', 'input', 'text', quoted]);
+}
+
+function realInputKeyevent(serial, keycode) {
+  return execAdb(['-s', serial, 'shell', 'input', 'keyevent', String(keycode)]);
+}
+
 function realCaptureScreenshot(serial) {
   return new Promise((resolve, reject) => {
     execFile(
@@ -90,4 +102,12 @@ function realCaptureScreenshot(serial) {
   });
 }
 
-module.exports = { realSpawnGetEvent, realSendEvent, realCaptureScreenshot, realInputTap, realInputSwipe };
+module.exports = {
+  realSpawnGetEvent,
+  realSendEvent,
+  realCaptureScreenshot,
+  realInputTap,
+  realInputSwipe,
+  realInputText,
+  realInputKeyevent,
+};

@@ -1,7 +1,13 @@
 # adb-recorder
 
-Record touch input on an Android device/emulator via `adb`, browse a screenshot
-per gesture, and replay a recorded session verbatim.
+Record touch and keyboard input on an Android device/emulator via `adb`,
+browse a screenshot per step, and replay a recorded session.
+
+Keystrokes (hardware keys, or the host keyboard on an emulator) are captured
+as text steps and replayed with `input text` / `input keyevent`.
+**Anything typed while recording — including passwords — is stored in plain
+text in the session's `events.log` and `steps.json` and shown in the UI.**
+Don't record real credentials you can't afford to have on disk.
 
 ## Requirements
 

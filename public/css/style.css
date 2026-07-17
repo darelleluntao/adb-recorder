@@ -224,8 +224,15 @@ td a:hover { color: var(--red); }
 
 .num { font-variant-numeric: tabular-nums; }
 
-tr .delete-btn { opacity: 0; padding: 0.15rem 0.5rem; }
+tr .delete-btn { opacity: 0; padding: 0.15rem 0.5rem; white-space: nowrap; }
 tr:hover .delete-btn, tr:focus-within .delete-btn { opacity: 1; }
+.delete-btn.confirm {
+  opacity: 1;
+  color: var(--red-ink);
+  background: var(--red);
+  font-weight: 600;
+}
+.delete-btn.confirm:hover { background: var(--red); color: var(--red-ink); }
 
 .empty {
   padding: 3rem 0.75rem;
@@ -362,6 +369,7 @@ tr:hover .delete-btn, tr:focus-within .delete-btn { opacity: 1; }
 }
 .step .kind.tap { color: var(--amber); }
 .step .kind.swipe { color: var(--blue); }
+.step .kind.text, .step .kind.key { color: var(--green); }
 
 .step .coords {
   margin-left: auto;

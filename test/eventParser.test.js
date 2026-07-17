@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { parseGetEventLog, GestureParser } = require('../src/eventParser');
+const { parseGetEventLog, GestureParser, KeyParser } = require('../src/eventParser');
 
 const FIXTURE = [
   '[   100.000000] /dev/input/event2: 0003 0035 000005a0',
@@ -117,4 +117,82 @@ test('feedLine returns null until a gesture closes', () => {
   const gesture = parser.feedLine(lines[5]);
   assert.ok(gesture);
   assert.equal(gesture.type, 'tap');
+});
+
+// ── KeyParser ──────────────────────────────────────────────────────────
+// evdev keycodes: h=35 e=18 l=38 o=24 shift=42 a=30 1=2 backspace=14
+// enter=28 space=57 dot=52 @=shift+2
+
+function feedKey(parser, ts, code, value) {
+  return parser.feed(ts, code, value) || [];
+}
+
+test('KeyParser buffers keystrokes and flush() yields a text step', () => {
+  const kp = new KeyParser();
+  for (const [ts, code] of [[10.0, 35], [10.1, 18], [10.2, 38], [10.3, 38], [10.4, 24]]) {
+    assert.deepEqual(feedKey(kp, ts, code, 1), []);
+    feedKey(kp, ts + 0.01, code, 0);
+  }
+  const steps = kp.flush(10.5);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].type, 'text');
+  assert.equal(steps[0].text, 'hello');
+  assert.equal(steps[0].startTime, 10.0);
+  assert.equal(steps[0].endTime, 10.5);
+});
+
+test('KeyParser applies shift for uppercase and symbols', () => {
+  const kp = new KeyParser();
+  feedKey(kp, 1.0, 42, 1); // shift down
+  feedKey(kp, 1.1, 30, 1); // A
+  feedKey(kp, 1.1, 30, 0);
+  feedKey(kp, 1.2, 3, 1); // shift+2 = @
+  feedKey(kp, 1.2, 3, 0);
+  feedKey(kp, 1.3, 42, 0); // shift up
+  feedKey(kp, 1.4, 30, 1); // a
+  const steps = kp.flush(1.5);
+  assert.equal(steps[0].text, 'A@a');
+});
+
+test('KeyParser backspace edits the pending buffer', () => {
+  const kp = new KeyParser();
+  feedKey(kp, 1.0, 30, 1); // a
+  feedKey(kp, 1.1, 48, 1); // b
+  feedKey(kp, 1.2, 14, 1); // backspace
+  feedKey(kp, 1.3, 46, 1); // c
+  const steps = kp.flush(1.4);
+  assert.equal(steps[0].text, 'ac');
+});
+
+test('KeyParser emits a key step for backspace on an empty buffer and for enter', () => {
+  const kp = new KeyParser();
+  const del = feedKey(kp, 1.0, 14, 1);
+  assert.equal(del.length, 1);
+  assert.deepEqual([del[0].type, del[0].key, del[0].androidKeycode], ['key', 'DEL', 67]);
+
+  feedKey(kp, 2.0, 30, 1); // a
+  const enter = feedKey(kp, 2.1, 28, 1);
+  assert.equal(enter.length, 2, 'enter flushes pending text first');
+  assert.equal(enter[0].type, 'text');
+  assert.equal(enter[0].text, 'a');
+  assert.deepEqual([enter[1].type, enter[1].key, enter[1].androidKeycode], ['key', 'ENTER', 66]);
+});
+
+test('KeyParser flushes automatically after a typing gap', () => {
+  const kp = new KeyParser({ gapSeconds: 2 });
+  feedKey(kp, 1.0, 30, 1); // a
+  const steps = feedKey(kp, 5.0, 48, 1); // b, 4s later
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].text, 'a');
+  const rest = kp.flush(5.1);
+  assert.equal(rest[0].text, 'b');
+});
+
+test('KeyParser ignores unknown keycodes and key repeats count as presses', () => {
+  const kp = new KeyParser();
+  feedKey(kp, 1.0, 116, 1); // KEY_POWER — ignored
+  feedKey(kp, 1.1, 30, 1); // a down
+  feedKey(kp, 1.2, 30, 2); // a autorepeat
+  const steps = kp.flush(1.3);
+  assert.equal(steps[0].text, 'aa');
 });
