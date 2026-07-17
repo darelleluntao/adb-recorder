@@ -11,6 +11,10 @@ as text steps and replayed with `input text` / `input keyevent`.
 text in the session's `events.log` and `steps.json` and shown in the UI.**
 Don't record real credentials you can't afford to have on disk.
 
+<p align="center">
+  <img src="docs/screenshots/session-list.png" alt="Sessions list" width="600" />
+</p>
+
 ## Features
 
 - **Record** every tap, swipe, and keystroke on a connected device or
@@ -25,6 +29,10 @@ Don't record real credentials you can't afford to have on disk.
 - Two-click confirmation before deleting a session, since sessions can
   contain recorded credentials and deletion is permanent.
 - Light/dark UI that follows your OS theme.
+
+<p align="center">
+  <img src="docs/screenshots/session-detail.png" alt="Recorded session timeline with gesture overlays" width="700" />
+</p>
 
 ## Requirements
 
