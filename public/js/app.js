@@ -66,13 +66,35 @@ async function loadSessions() {
     )
     .join('');
   tbody.querySelectorAll('.delete-btn').forEach((btn) => {
+    let confirmTimer = null;
+    const reset = () => {
+      clearTimeout(confirmTimer);
+      confirmTimer = null;
+      btn.classList.remove('confirm');
+      btn.innerHTML = '✕︎';
+      btn.title = 'Delete session';
+    };
     btn.addEventListener('click', async () => {
+      // Sessions can hold recorded keystrokes (including passwords), and the
+      // delete is a hard, irreversible fs.rm. Require a second click: the
+      // first arms the button as "Confirm?", auto-disarming after 3s.
+      if (!confirmTimer) {
+        btn.classList.add('confirm');
+        btn.textContent = 'Confirm?';
+        btn.title = 'Click again to permanently delete';
+        confirmTimer = setTimeout(reset, 3000);
+        return;
+      }
+      reset();
       const res = await fetch(`/api/sessions/${encodeURIComponent(btn.dataset.name)}`, { method: 'DELETE' });
       if (!res.ok) {
         showBanner(`Failed to delete session: ${res.status} ${res.statusText}`);
         return;
       }
       loadSessions();
+    });
+    btn.addEventListener('mouseleave', () => {
+      if (confirmTimer) reset();
     });
   });
 }
